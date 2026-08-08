@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -21,6 +21,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 from ..mcp.config import Settings
 from .llm_stream import emit_llm_stream, has_llm_stream_observer
+from .metis import ResolvedModelRoute
 
 logger = logging.getLogger("munin.llm")
 
@@ -59,7 +60,25 @@ class _TimeoutState:
 
 
 class LLMClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, route: ResolvedModelRoute | None = None) -> None:
+        # A Metis route overrides the legacy env-driven Settings fields BEFORE
+        # the existing validation and OpenAI construction, so a route can stand
+        # in for completely empty/legacy settings. The route itself is immutable
+        # (``model_config = ConfigDict(frozen=True)``) and stored on the instance
+        # only so ``make_langchain`` can read adapter metadata; it is never
+        # mutated by this client.
+        if route is not None:
+            settings = replace(
+                settings,
+                llm_base_url=route.base_url,
+                llm_api_key=route.api_key,
+                llm_model=route.model_id,
+                llm_timeout_floor=route.timeout_seconds,
+                llm_retry_attempts=route.retry_attempts,
+                agent_model_call_limit=route.budget["max_model_calls"],
+                agent_tool_call_limit=route.budget["max_tool_calls"],
+            )
+        self._route = route
         _validate_base_url(settings.llm_base_url)
         if not settings.llm_api_key:
             raise LLMConfigError("LLM_API_KEY is empty")
@@ -277,6 +296,27 @@ class LLMClient:
 
     def make_langchain(self) -> Any:
         from langchain_openai import ChatOpenAI
+
+        # Route-aware path: when a Metis route was injected at construction,
+        # ``make_langchain`` builds the langchain model from the
+        # effective settings (already route-overridden) plus the route's own
+        # timeout/retry values. Adapter selection lives here — this slice only
+        # supports ``openai_compatible``; any other adapter fails fast with a
+        # generic message that never mentions the resolved ``api_key``.
+        if self._route is not None:
+            if self._route.adapter != "openai_compatible":
+                raise LLMConfigError(
+                    f"unsupported Metis adapter {self._route.adapter!r}; "
+                    f"this build supports 'openai_compatible' only"
+                )
+            return ChatOpenAI(
+                model=self.settings.llm_model,
+                api_key=self.settings.llm_api_key,
+                base_url=self.settings.llm_base_url,
+                temperature=0.2,
+                timeout=self._route.timeout_seconds,
+                max_retries=self._route.retry_attempts,
+            )
 
         # DeepSeek V4 thinking-mode models need the reasoning_content contract;
         # anything else keeps the plain OpenAI-compatible path.

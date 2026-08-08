@@ -36,6 +36,15 @@ class Settings:
     agent_tool_call_limit: int = 64
     operator_language: str = "auto"
 
+    # --- Metis model routing (v2, opt-in) ---
+    # Path to ``configs/models.json`` selected by ``MUNIN_MODELS_JSON``. Blank
+    # or unset -> None (Metis is off; today's env-driven path is used). A
+    # nonblank value is expanded and resolved to an absolute Path so a relative
+    # ``configs/models.json`` works from any CWD. ``get_settings`` only resolves
+    # the path here; it never loads Metis or requires secrets — loading is
+    # delegated to ``munin.core.metis.load_metis_if_enabled``.
+    metis_config_path: Path | None = None
+
     # --- Passive intel providers ---
     tavily_api_key: str = ""
     hugin_url: str = "https://raw.githubusercontent.com/PrinceOfPwn/Hugin/main/hugin/graph.json"
@@ -297,6 +306,16 @@ def get_settings() -> Settings:
         discord_allowed_user_ids=os.environ.get(
             "MUNIN_DISCORD_ALLOWED_USER_IDS", ""
         ).strip(),
+        # Metis model routing (opt-in): ``MUNIN_MODELS_JSON`` selects the
+        # ``configs/models.json`` path. Blank/unset -> None (Metis off; the
+        # legacy env-driven LLM path is used). Relative values are expanded and
+        # resolved to an absolute Path. Nothing is loaded and no secret is
+        # required here — ``munin.core.metis.load_metis_if_enabled`` owns that.
+        metis_config_path=(
+            Path(raw).expanduser().resolve()
+            if (raw := os.environ.get("MUNIN_MODELS_JSON", "").strip())
+            else None
+        ),
     )
     settings.ensure_workspace()
     return settings

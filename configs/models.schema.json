@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munin.local/configs/models.schema.json",
+  "title": "Munin model routing configuration",
+  "description": "Validates the Metis four-catalog model routing topology (configs/models.json): providers, models, budgets and routes. The root object and every catalog entry are closed (additionalProperties: false); provider, model and budget catalog entry names are arbitrary; all eight required routes must be present; schema_version must be exactly 1. No provider/model defaults or credentials are defined here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "providers",
+    "models",
+    "budgets",
+    "routes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "type": "integer",
+      "description": "The models.json schema version. Only 1 is accepted."
+    },
+    "providers": {
+      "type": "object",
+      "description": "Catalog of provider implementations. Keys are arbitrary provider ids; each entry names the adapter, base_url and api_key_env. Provider ids are distinct from the runtime adapter string.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^.+$": {
+          "type": "object",
+          "description": "One provider definition. api_key_env is the environment variable NAME; credentials are never inlined here.",
+          "additionalProperties": false,
+          "required": ["adapter", "base_url", "api_key_env"],
+          "properties": {
+            "adapter": { "type": "string", "minLength": 1 },
+            "base_url": { "type": "string", "minLength": 1 },
+            "api_key_env": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "models": {
+      "type": "object",
+      "description": "Catalog of model definitions. Keys are arbitrary model names; values reference a provider and carry the vendor model_id plus capabilities.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^.+$": {
+          "type": "object",
+          "description": "One model definition. provider references a key of the providers catalog.",
+          "additionalProperties": false,
+          "required": ["provider", "model_id", "capabilities"],
+          "properties": {
+            "provider": { "type": "string", "minLength": 1 },
+            "model_id": { "type": "string", "minLength": 1 },
+            "capabilities": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "description": "Catalog of execution budgets. Keys are arbitrary budget names; values cap model and tool calls.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^.+$": {
+          "type": "object",
+          "description": "One budget definition.",
+          "additionalProperties": false,
+          "required": ["max_model_calls", "max_tool_calls"],
+          "properties": {
+            "max_model_calls": { "type": "integer", "minimum": 0 },
+            "max_tool_calls": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "routes": {
+      "type": "object",
+      "description": "Catalog of model routes. All eight required route entries must be present; each references a model and a budget.",
+      "minProperties": 8,
+      "additionalProperties": false,
+      "required": [
+        "munin",
+        "heimdall",
+        "generated_specialist",
+        "tool_selector",
+        "valkyrja",
+        "volundr",
+        "yggdrasil_builder",
+        "ariadne_reranker"
+      ],
+      "properties": {
+        "munin": { "$ref": "#/$defs/route" },
+        "heimdall": { "$ref": "#/$defs/route" },
+        "generated_specialist": { "$ref": "#/$defs/route" },
+        "tool_selector": { "$ref": "#/$defs/route" },
+        "valkyrja": { "$ref": "#/$defs/route" },
+        "volundr": { "$ref": "#/$defs/route" },
+        "yggdrasil_builder": { "$ref": "#/$defs/route" },
+        "ariadne_reranker": { "$ref": "#/$defs/route" }
+      }
+    }
+  },
+  "$defs": {
+    "route": {
+      "type": "object",
+      "description": "One model route. model references a model name, budget references a budget name; fallbacks reference other route names.",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "budget",
+        "timeout_seconds",
+        "retry_attempts",
+        "fallbacks"
+      ],
+      "properties": {
+        "model": { "type": "string", "minLength": 1 },
+        "budget": { "type": "string", "minLength": 1 },
+        "timeout_seconds": { "type": "integer", "minimum": 0 },
+        "retry_attempts": { "type": "integer", "minimum": 0 },
+        "fallbacks": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}
